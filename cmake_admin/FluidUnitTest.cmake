@@ -20,7 +20,30 @@ macro ( ADD_FLUID_TEST _test )
     )
 
     # add the test to ctest
-    ADD_TEST(NAME ${_test} COMMAND ${_test})
+    # If cross-compiling for Android, use qemu-user to execute the test
+    if(ANDROID AND CMAKE_CROSSCOMPILING)
+        # Determine the appropriate qemu binary based on target architecture
+        if(ANDROID_ABI STREQUAL "armeabi-v7a")
+            find_program(QEMU_BINARY qemu-arm-static)
+        elseif(ANDROID_ABI STREQUAL "arm64-v8a")
+            find_program(QEMU_BINARY qemu-aarch64-static)
+        elseif(ANDROID_ABI STREQUAL "x86")
+            find_program(QEMU_BINARY qemu-i386-static)
+        elseif(ANDROID_ABI STREQUAL "x86_64")
+            find_program(QEMU_BINARY qemu-x86_64-static)
+        endif()
+        
+        if(QEMU_BINARY)
+            ADD_TEST(NAME ${_test} COMMAND ${QEMU_BINARY} ${_test})
+            # Note: QEMU_LD_PREFIX environment variable will be set by the CI script
+            message(STATUS "Android test ${_test} will be run with ${QEMU_BINARY}")
+        else()
+            ADD_TEST(NAME ${_test} COMMAND ${_test})
+            message(WARNING "Android test ${_test} will be run directly (qemu not found)")
+        endif()
+    else()
+        ADD_TEST(NAME ${_test} COMMAND ${_test})
+    endif()
 
     # append the current unit test to check-target as dependency
     add_dependencies(check ${_test})
