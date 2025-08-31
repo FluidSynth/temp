@@ -35,31 +35,31 @@ jobs:
         include:
           - platform: Win32
             platformAlt: x86
-            artifactPrefix: "fluidsynth"
+            osal: "glib"
             CFLAGS: ""
             CXXFLAGS: ""
-            CMAKEFLAGS: "-Denable-libinstpatch=0"
+            CMAKEFLAGS: ""
             dep_arch: "x86"
           - platform: Win32
             platformAlt: x86
-            artifactPrefix: "fluidsynth-cpp11"
+            osal: "cpp11"
             CFLAGS: "/arch:IA32"
             CXXFLAGS: "/arch:IA32"
-            CMAKEFLAGS: "-Denable-libinstpatch=0 -Dosal=cpp11"
+            CMAKEFLAGS: ""
             dep_arch: "x86"
           - platform: x64
             platformAlt: x64
-            artifactPrefix: "fluidsynth"
+            osal: "glib"
             CFLAGS: ""
             CXXFLAGS: ""
-            CMAKEFLAGS: "-Denable-libinstpatch=0"
+            CMAKEFLAGS: ""
             dep_arch: "x64"
           - platform: x64
             platformAlt: x64
-            artifactPrefix: "fluidsynth-cpp11"
+            osal: "cpp11"
             CFLAGS: ""
             CXXFLAGS: ""
-            CMAKEFLAGS: "-Denable-libinstpatch=0 -Dosal=cpp11"
+            CMAKEFLAGS: ""
             dep_arch: "x64"
     
     name: 🔨 MSVC ${{ matrix.platform }} ${{ matrix.artifactPrefix }}
@@ -118,6 +118,7 @@ jobs:
         cmake -Werror=dev -A ${{ matrix.platform }} -T v143 ^
           -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}\${{ env.INSTALL_LOCATION }} ^
           -Denable-readline=0 -Denable-floats=1 -Denable-jack=0 -Denable-sdl2=0 ^
+          -Dosal=${{ matrix.osal }} -Denable-libinstpatch=0 -Denable-dls=1 ^
           ${{ matrix.CMAKEFLAGS }} -DCMAKE_BUILD_TYPE=Release ^
           -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded ^
           -DCMAKE_VERBOSE_MAKEFILE=1 -DNO_GUI=1 .. || exit /b 1
@@ -168,10 +169,19 @@ jobs:
           exit 1
         fi
 
+    - name: Set artifact name
+      id: artifact_name
+      run: |
+        if [[ "${{ github.event_name }}" == "release" ]]; then
+          echo "name=fluidsynth-${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+        else
+          echo "name=CI-${{ github.run_id }}" >> $GITHUB_OUTPUT
+        fi
+
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.artifactPrefix }}-${{ matrix.platform }}
+        name: ${{ steps.artifact_name.outputs.name }}-win10-${{ matrix.platformAlt }}
         path: ${{ env.INSTALL_LOCATION }}
         retention-days: 14
         overwrite: true
@@ -425,7 +435,7 @@ jobs:
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.artifactPrefix }}-${{ matrix.platform }}
+        name: CI-${{ github.run_id }}-${{ github.jobs[github.job].name }}-${{ matrix.artifactPrefix }}-${{ matrix.platform }}
         path: ${{ env.INSTALL_LOCATION }}
         retention-days: 14
         overwrite: true
@@ -497,7 +507,7 @@ jobs:
     - name: '${{ matrix.icon }} Upload Artifacts'
       uses: actions/upload-artifact@v4
       with:
-        name: ${{env.INSTALL_LOCATION}}-${{matrix.sys}}-${{matrix.osal}}
+        name: CI-${{ github.run_id }}-${{ github.jobs[github.job].name }}-${{matrix.sys}}-${{matrix.osal}}
         path: ${{env.INSTALL_LOCATION}}
         retention-days: 14
         overwrite: true
@@ -505,31 +515,32 @@ jobs:
   # Publish artifacts to GitHub releases (only on release events)
   publish-release:
     if: github.event_name == 'release' && github.event.action == 'published'
-    needs: [msvc-build, mingw-build]
+    needs: [msvc-build]
     runs-on: ubuntu-latest
     steps:
     - name: Download all artifacts
       uses: actions/download-artifact@v4
       with:
         path: artifacts
+        pattern: fluidsynth-*
+        merge-multiple: true
         
     - name: Create release archives
       run: |
         cd artifacts
+        ls -la
         for dir in */; do
           if [[ "$dir" == fluidsynth* ]]; then
             echo "Creating archive for $dir"
-            tar -czf "${dir%/}.tar.gz" -C "$dir" .
             zip -r "${dir%/}.zip" "$dir"
           fi
         done
-        ls -la *.tar.gz *.zip
+        ls -la *.zip
 
     - name: Upload release assets
       uses: softprops/action-gh-release@v2
       with:
         files: |
-          artifacts/*.tar.gz
           artifacts/*.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
