@@ -538,8 +538,21 @@ jobs:
   announce-release:
     if: github.event_name == 'release' && github.event.action == 'published'
     needs: [publish-release]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
+    - name: Publish API Docs to GH Pages
+      uses: JamesIves/github-pages-deploy-action@v4
+      with:
+        folder: ${{runner.workspace}}
+        repository-name: FluidSynth/fluidsynth.github.io
+        branch: test
+        target-folder: _posts/
+        token: ${{ secrets.DEPLOY_API_TOKEN_NEW }}
+        clean: false
+        commit-message: Announcing release ???
+        git-config-name: Release Announcer Bot
+        git-config-email: fluid-release-bot@fluidsynth.github.io
+        
     - name: Create announcement PR
       uses: actions/github-script@v7
       with:
