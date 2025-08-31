@@ -62,7 +62,7 @@ jobs:
             CMAKEFLAGS: ""
             dep_arch: "x64"
     
-    name: 🔨 MSVC ${{ matrix.platform }} ${{ matrix.artifactPrefix }}
+    name: 🔨 MSVC ${{ matrix.platform }} ${{ matrix.osal }}
     
     steps:
     - name: Checkout code
@@ -170,6 +170,7 @@ jobs:
         fi
 
     - name: Set artifact name
+      shell: bash
       id: artifact_name
       run: |
         if [[ "${{ github.event_name }}" == "release" ]]; then
