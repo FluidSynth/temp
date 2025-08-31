@@ -540,6 +540,10 @@ jobs:
     needs: [publish-release]
     runs-on: ubuntu-22.04
     steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
       - name: Generate HTML Release Announcement
         run: |
           set -e
