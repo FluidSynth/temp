@@ -62,7 +62,7 @@ jobs:
             CMAKEFLAGS: ""
             dep_arch: "x64"
     
-    name: 🔨 MSVC ${{ matrix.platform }} ${{ matrix.osal }}
+    name: 🔨 MSVC ${{ matrix.platformAlt }} ${{ matrix.osal }}
     
     steps:
     - name: Checkout code
@@ -182,7 +182,7 @@ jobs:
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ steps.artifact_name.outputs.name }}-win10-${{ matrix.platformAlt }}
+        name: ${{ steps.artifact_name.outputs.name }}-win10-${{ matrix.platformAlt }}-${{ matrix.osal }}
         path: ${{ env.INSTALL_LOCATION }}
         retention-days: 14
         overwrite: true
@@ -299,7 +299,7 @@ jobs:
             sdl3-url: 'https://github.com/libsdl-org/SDL/releases/download/release-3.2.10/SDL3-devel-3.2.10-mingw.tar.gz'
             sdl3-subdir: 'x86_64-w64-mingw32'
     
-    name: 🔧 MinGW ${{ matrix.artifactPrefix }}
+    name: 🔧 MinGW ${{ matrix.artifactPrefix }} ${{ matrix.platform }}
     
     steps:
     - name: Checkout code
@@ -436,7 +436,7 @@ jobs:
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: CI-${{ github.run_id }}-${{ github.jobs[github.job].name }}-${{ matrix.artifactPrefix }}-${{ matrix.platform }}
+        name: CI-${{ github.run_id }}-mingw-${{ matrix.artifactPrefix }}-${{ matrix.platform }}
         path: ${{ env.INSTALL_LOCATION }}
         retention-days: 14
         overwrite: true
@@ -508,7 +508,7 @@ jobs:
     - name: '${{ matrix.icon }} Upload Artifacts'
       uses: actions/upload-artifact@v4
       with:
-        name: CI-${{ github.run_id }}-${{ github.jobs[github.job].name }}-${{matrix.sys}}-${{matrix.osal}}
+        name: CI-${{ github.run_id }}-msys2-${{matrix.sys}}-${{matrix.osal}}
         path: ${{env.INSTALL_LOCATION}}
         retention-days: 14
         overwrite: true
