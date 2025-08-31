@@ -524,7 +524,7 @@ jobs:
       with:
         path: artifacts
         pattern: fluidsynth-*
-        merge-multiple: true
+        merge-multiple: false
         
     - name: Create release archives
       run: |
