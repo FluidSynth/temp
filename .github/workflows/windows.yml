@@ -586,5 +586,5 @@ jobs:
           token: ${{ secrets.DEPLOY_API_TOKEN_NEW }}
           clean: false
           commit-message: Announce FluidSynth ${{ github.event.release.tag_name }}
-          git-config-name: Release Announcer Bot
+          git-config-name: Fluid Release Announcer
           git-config-email: fluid-release-bot@fluidsynth.github.io
