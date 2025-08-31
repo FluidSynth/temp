@@ -540,79 +540,39 @@ jobs:
     needs: [publish-release]
     runs-on: ubuntu-22.04
     steps:
-    - name: Publish API Docs to GH Pages
-      uses: JamesIves/github-pages-deploy-action@v4
-      with:
-        folder: ${{runner.workspace}}
-        repository-name: FluidSynth/fluidsynth.github.io
-        branch: test
-        target-folder: _posts/
-        token: ${{ secrets.DEPLOY_API_TOKEN_NEW }}
-        clean: false
-        commit-message: Announcing release ???
-        git-config-name: Release Announcer Bot
-        git-config-email: fluid-release-bot@fluidsynth.github.io
-        
-    - name: Create announcement PR
-      uses: actions/github-script@v7
-      with:
-        github-token: ${{ secrets.DEPLOY_API_TOKEN_NEW }}
-        script: |
-          const { owner, repo } = context.repo;
-          const tagName = context.payload.release.tag_name;
-          const releaseName = context.payload.release.name || tagName;
-          const releaseDate = new Date().toISOString().split('T')[0];
-          
-          // Extract version from tag (remove 'v' prefix if present)
-          const version = tagName.replace(/^v/, '');
-          
-          // Create post content
-          const postContent = `---
-          title: Released FluidSynth ${version}
-          author: GitHub Actions
-          layout: post
-          ---
-          
-          A stable version of fluidsynth ${version} has been released. Details can be found in the release notes:
-          
-          <https://github.com/FluidSynth/fluidsynth/releases/tag/${tagName}>
-          `;
-          
-          // Create the post filename
-          const postFilename = `${releaseDate}-released-fluidsynth-${version.replace(/\./g, '-')}.md`;
-          
-          try {
-            // Create PR in website repository
-            const pr = await github.rest.pulls.create({
-              owner: 'FluidSynth',
-              repo: 'fluidsynth.github.io',
-              title: `Add release announcement for FluidSynth ${version}`,
-              head: `release-announcement-${version}`,
-              base: 'main',
-              body: `Automated PR to announce the release of FluidSynth ${version}.
-              
-              This PR adds a new blog post announcing the release.
-              `,
-              draft: false
-            });
-            
-            console.log('Created PR:', pr.data.html_url);
-          } catch (error) {
-            console.log('Failed to create PR:', error.message);
-            // Create an issue instead if PR creation fails
-            const issue = await github.rest.issues.create({
-              owner: 'FluidSynth', 
-              repo: 'fluidsynth.github.io',
-              title: `Release announcement needed for FluidSynth ${version}`,
-              body: `A new release ${version} has been published, but automatic PR creation failed.
-              
-              Please manually create a blog post at \`_posts/${postFilename}\` with this content:
-              
-              \`\`\`markdown
-              ${postContent}
-              \`\`\`
-              
-              Release URL: ${context.payload.release.html_url}`
-            });
-            console.log('Created issue instead:', issue.data.html_url);
-          }
+      - name: Generate HTML Release Announcement
+        run: |
+          set -e
+          TAG_NAME="${{ github.event.release.tag_name }}"
+          RELEASE_NAME="${{ github.event.release.name }}"
+          VERSION="${TAG_NAME#v}"
+          DATE="$(date +%Y-%m-%d)"
+          FILENAME="${DATE}-released-fluidsynth-${VERSION//./-}.html"
+          mkdir -p release_announcement
+          cat > release_announcement/$FILENAME <<EOF
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <title>Released FluidSynth ${VERSION}</title>
+          </head>
+          <body>
+            <h1>Released FluidSynth ${VERSION}</h1>
+            <p>A stable version of FluidSynth ${VERSION} has been released. Details can be found in the release notes:</p>
+            <p><a href="https://github.com/FluidSynth/fluidsynth/releases/tag/${TAG_NAME}">Release Notes</a></p>
+          </body>
+          </html>
+          EOF
+  
+      - name: Publish HTML Announcement to GH Pages
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: release_announcement
+          repository-name: FluidSynth/fluidsynth.github.io
+          branch: test
+          target-folder: _posts/
+          token: ${{ secrets.DEPLOY_API_TOKEN_NEW }}
+          clean: false
+          commit-message: Announce FluidSynth ${{ github.event.release.tag_name }}
+          git-config-name: Release Announcer Bot
+          git-config-email: fluid-release-bot@fluidsynth.github.io
