@@ -547,24 +547,20 @@ jobs:
           RELEASE_NAME="${{ github.event.release.name }}"
           VERSION="${TAG_NAME#v}"
           DATE="$(date +%Y-%m-%d)"
-          FILENAME="${DATE}-released-fluidsynth-${VERSION//./-}.html"
+          FILENAME="${DATE}-released-fluidsynth-${VERSION//./-}.md"
           mkdir -p release_announcement
           cat > release_announcement/$FILENAME <<EOF
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-            <meta charset="UTF-8">
-            <title>Released FluidSynth ${VERSION}</title>
-          </head>
-          <body>
-            <h1>Released FluidSynth ${VERSION}</h1>
-            <p>A stable version of FluidSynth ${VERSION} has been released. Details can be found in the release notes:</p>
-            <p><a href="https://github.com/FluidSynth/fluidsynth/releases/tag/${TAG_NAME}">Release Notes</a></p>
-          </body>
-          </html>
-          EOF
-  
-      - name: Publish HTML Announcement to GH Pages
+          ---
+          title: Released FluidSynth ${VERSION}
+          author: Tom Moebert
+          layout: post
+          ---
+          
+          A maintenance release for fluidsynth has been released. Details can be found in the release notes:
+          
+          <https://github.com/FluidSynth/fluidsynth/releases/tag/${TAG_NAME}>
+
+      - name: Publish Announcement to GH Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: release_announcement
