@@ -183,9 +183,15 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: ${{ steps.artifact_name.outputs.name }}-win10-${{ matrix.platformAlt }}-${{ matrix.osal }}
-        path: |
-          ${{ env.INSTALL_LOCATION }}
-          d:\deps\
+        path: ${{ env.INSTALL_LOCATION }}
+        retention-days: 14
+        overwrite: true
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.artifact_name.outputs.name }}-win10-${{ matrix.platformAlt }}-${{ matrix.osal }}
+        path: 'd:\deps\'
         retention-days: 14
         overwrite: true
 
