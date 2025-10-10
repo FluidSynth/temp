@@ -536,7 +536,6 @@ jobs:
             echo "Testing artifact $dir"
             ls -la "$dir"
             "$dir/bin/fluidsynth.exe" --version
-          fi
         done
 
   # Publish artifacts to GitHub releases (only on release events)
