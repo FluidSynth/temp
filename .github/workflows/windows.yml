@@ -515,16 +515,18 @@ jobs:
 
   # Publish artifacts to GitHub releases (only on release events)
   acceptance-test:
-    needs: [msvc-build]
+    needs:
+    - msvc-build
+    - msys2-build
+    - mingw-build
     runs-on: ubuntu-latest
+    name: 🧪 Acceptance Test
     steps:
     - name: Download all artifacts
       uses: actions/download-artifact@v5
       with:
         path: artifacts
-        pattern: fluidsynth-*
         merge-multiple: false
-        tag_name: ${{ github.event.release.tag_name }}
         
     - name: Create release archives
       run: |
@@ -546,6 +548,7 @@ jobs:
       - acceptance-test
       - msvc-build
     runs-on: ubuntu-latest
+    name: 🚀 Publish Release Artifacts
     steps:
     - name: Download all artifacts
       uses: actions/download-artifact@v5
@@ -553,7 +556,6 @@ jobs:
         path: artifacts
         pattern: fluidsynth-*
         merge-multiple: false
-        tag_name: ${{ github.event.release.tag_name }}
         
     - name: Create release archives
       run: |
@@ -580,6 +582,7 @@ jobs:
     if: github.event_name == 'release' && github.event.action == 'published'
     needs: [publish-release]
     runs-on: ubuntu-22.04
+    name: 📢 Announce Release
     steps:
       - uses: actions/checkout@v5
         with:
