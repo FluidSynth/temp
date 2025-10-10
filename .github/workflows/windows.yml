@@ -514,9 +514,37 @@ jobs:
         overwrite: true
 
   # Publish artifacts to GitHub releases (only on release events)
+  acceptance-test:
+    needs: [msvc-build]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v5
+      with:
+        path: artifacts
+        pattern: fluidsynth-*
+        merge-multiple: false
+        tag_name: ${{ github.event.release.tag_name }}
+        
+    - name: Create release archives
+      run: |
+        set -e
+        cd artifacts
+        ls -la
+        for dir in */; do
+          if [[ "$dir" == fluidsynth* ]]; then
+            echo "Testing artifact $dir"
+            ls -la "$dir"
+            "$dir/bin/fluidsynth.exe" --version
+          fi
+        done
+
+  # Publish artifacts to GitHub releases (only on release events)
   publish-release:
     if: github.event_name == 'release' && github.event.action == 'published'
-    needs: [msvc-build]
+    needs:
+      - acceptance-test
+      - msvc-build
     runs-on: ubuntu-latest
     steps:
     - name: Download all artifacts
