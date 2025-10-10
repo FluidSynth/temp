@@ -159,6 +159,12 @@ jobs:
         rmdir "${{ github.workspace }}\${{ env.INSTALL_LOCATION }}\lib\x86" 2>nul || exit 0
         rmdir "${{ github.workspace }}\${{ env.INSTALL_LOCATION }}\lib\x64" 2>nul || exit 0
 
+        cd d:\deps\bin\
+        COPY SDL3.dll + sndfile.dll "${{ github.workspace }}\${{ env.INSTALL_LOCATION }}\bin\
+        if "${{ matrix.osal }}"=="glib" (
+          COPY libglib-2.0-0.dll + libgobject-2.0-0.dll + libgthread-2.0-0.dll + intl.dll "${{ github.workspace }}\${{ env.INSTALL_LOCATION }}\bin\
+        )
+
     - name: Validate library
       shell: bash
       working-directory: ${{ env.INSTALL_LOCATION }}
@@ -176,7 +182,7 @@ jobs:
         if [[ "${{ github.event_name }}" == "release" ]]; then
           echo "name=fluidsynth-${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
         else
-          echo "name=CI-${{ github.run_id }}" >> $GITHUB_OUTPUT
+          echo "name=fluidsynth-${{ github.run_id }}" >> $GITHUB_OUTPUT
         fi
 
     - name: Upload Artifacts
@@ -184,14 +190,6 @@ jobs:
       with:
         name: ${{ steps.artifact_name.outputs.name }}-win10-${{ matrix.platformAlt }}-${{ matrix.osal }}
         path: ${{ env.INSTALL_LOCATION }}
-        retention-days: 14
-        overwrite: true
-
-    - name: Upload Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ steps.artifact_name.outputs.name }}-win10-${{ matrix.platformAlt }}-${{ matrix.osal }}
-        path: 'd:\deps\'
         retention-days: 14
         overwrite: true
 
@@ -533,6 +531,7 @@ jobs:
       uses: actions/download-artifact@v5
       with:
         path: artifacts
+        pattern: fluidsynth-*
         merge-multiple: false
         
     - name: Try to execute fluidsynth
