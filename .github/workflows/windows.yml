@@ -530,11 +530,10 @@ jobs:
     - name: Try to execute fluidsynth
       shell: bash
       run: |
-        set -e
+        set -ex
         cd artifacts
         for dir in */; do
             echo "Testing artifact $dir"
-            ls -la "$dir"
             "$dir/bin/fluidsynth.exe" --version
         done
 
