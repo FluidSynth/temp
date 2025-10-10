@@ -513,13 +513,12 @@ jobs:
         retention-days: 14
         overwrite: true
 
-  # Publish artifacts to GitHub releases (only on release events)
   acceptance-test:
     needs:
     - msvc-build
     - msys2-build
     - mingw-build
-    runs-on: ubuntu-latest
+    runs-on: windows-2022
     name: 🧪 Acceptance Test
     steps:
     - name: Download all artifacts
@@ -528,13 +527,12 @@ jobs:
         path: artifacts
         merge-multiple: false
         
-    - name: Create release archives
+    - name: Try to execute fluidsynth
+      shell: bash
       run: |
         set -e
         cd artifacts
-        ls -la
         for dir in */; do
-          if [[ "$dir" == fluidsynth* ]]; then
             echo "Testing artifact $dir"
             ls -la "$dir"
             "$dir/bin/fluidsynth.exe" --version
@@ -562,10 +560,8 @@ jobs:
         cd artifacts
         ls -la
         for dir in */; do
-          if [[ "$dir" == fluidsynth* ]]; then
             echo "Creating archive for $dir"
             zip -r "${dir%/}.zip" "$dir"
-          fi
         done
         ls -la *.zip
 
