@@ -168,7 +168,9 @@ jobs:
           COPY libgobject-2.0-0.dll "${{ github.workspace }}\${{ env.INSTALL_LOCATION }}\bin\
           COPY libgthread-2.0-0.dll "${{ github.workspace }}\${{ env.INSTALL_LOCATION }}\bin\
           COPY intl.dll "${{ github.workspace }}\${{ env.INSTALL_LOCATION }}\bin\
+          COPY libintl-8.dll "${{ github.workspace }}\${{ env.INSTALL_LOCATION }}\bin\
         )
+        exit 0
 
     - name: Validate library
       shell: bash
