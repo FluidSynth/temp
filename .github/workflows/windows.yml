@@ -160,9 +160,14 @@ jobs:
         rmdir "${{ github.workspace }}\${{ env.INSTALL_LOCATION }}\lib\x64"
 
         cd d:\deps\bin\
-        COPY SDL3.dll + sndfile.dll "${{ github.workspace }}\${{ env.INSTALL_LOCATION }}\bin\
+        dir
+        COPY SDL3.dll "${{ github.workspace }}\${{ env.INSTALL_LOCATION }}\bin\
+        COPY sndfile.dll "${{ github.workspace }}\${{ env.INSTALL_LOCATION }}\bin\
         if "${{ matrix.osal }}"=="glib" (
-          COPY libglib-2.0-0.dll + libgobject-2.0-0.dll + libgthread-2.0-0.dll + intl.dll "${{ github.workspace }}\${{ env.INSTALL_LOCATION }}\bin\
+          COPY libglib-2.0-0.dll "${{ github.workspace }}\${{ env.INSTALL_LOCATION }}\bin\
+          COPY libgobject-2.0-0.dll "${{ github.workspace }}\${{ env.INSTALL_LOCATION }}\bin\
+          COPY libgthread-2.0-0.dll "${{ github.workspace }}\${{ env.INSTALL_LOCATION }}\bin\
+          COPY intl.dll "${{ github.workspace }}\${{ env.INSTALL_LOCATION }}\bin\
         )
 
     - name: Validate library
