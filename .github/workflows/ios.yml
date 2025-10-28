@@ -45,3 +45,24 @@ jobs:
         popd
     - name: Build
       run: bash contrib/ios_build.sh
+      
+    - name: Set artifact name
+      shell: bash
+      id: artifact_name
+      run: |
+        if [[ "${{ github.event_name }}" == "release" ]]; then
+          echo "name=fluidsynth-${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+        else
+          echo "name=fluidsynth-${{ github.run_id }}" >> $GITHUB_OUTPUT
+        fi
+        ls -la
+        ls -la build
+        ls -la build/FluidSynth.xcframework
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v5
+      with:
+        name: ${{ steps.artifact_name.outputs.name }}-iOS
+        path: build/FluidSynth.xcframework
+        retention-days: 14
+        overwrite: true
