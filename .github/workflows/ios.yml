@@ -39,6 +39,7 @@ jobs:
       run: |
         git clone https://github.com/libsdl-org/SDL.git && \
         pushd SDL && \
+        git checkout preview-3.3.2 && \
         xcodebuild -project Xcode/SDL/SDL.xcodeproj -target "SDL3.xcframework" -configuration Release SYMROOT="build/" && \
         mkdir build && \
         cp -r Xcode/SDL/build/SDL3.xcframework build/ && \
@@ -55,14 +56,13 @@ jobs:
         else
           echo "name=fluidsynth-${{ github.run_id }}" >> $GITHUB_OUTPUT
         fi
-        ls -la
-        ls -la build
-        ls -la build/FluidSynth.xcframework
+        ls -la . build build/*
+        rm -rf build-ios* ios.toolchain.cmake
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v5
       with:
         name: ${{ steps.artifact_name.outputs.name }}-iOS
-        path: build/FluidSynth.xcframework
+        path: build/
         retention-days: 14
         overwrite: true
