@@ -42,7 +42,7 @@ jobs:
         git checkout preview-3.3.2 && \
         xcodebuild -project Xcode/SDL/SDL.xcodeproj -target "SDL3.xcframework" -configuration Release SYMROOT="build/" && \
         mkdir build && \
-        cp -r Xcode/SDL/build/SDL3.xcframework build/ && \
+        cp -vr Xcode/SDL/build/SDL3.xcframework build/ && \
         popd
     - name: Build
       run: bash contrib/ios_build.sh
@@ -56,8 +56,8 @@ jobs:
         else
           echo "name=fluidsynth-${{ github.run_id }}" >> $GITHUB_OUTPUT
         fi
-        ls -la . build build/*
-        rm -rf build-ios* ios.toolchain.cmake
+        mkdir publish
+        cp -vr build/FluidSynth.xcframework Xcode/SDL/build/SDL3.xcframework  publish/
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v5
