@@ -90,7 +90,7 @@ jobs:
       run: |
         cd artifacts
         ls -la
-        zip -r "${{ steps.artifact_name.outputs.name }}-iOS.zip" "."
+        zip -r "${{ steps.artifact_name.outputs.name }}-iOS.zip" *
 
     - name: Upload release assets
       uses: softprops/action-gh-release@v2
