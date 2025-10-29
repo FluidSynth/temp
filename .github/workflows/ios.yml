@@ -12,6 +12,8 @@ on:
       - '.github/workflows/sonarcloud.yml'
       - '.cirrus.yml'
       - 'README.md'
+  release:
+    types: [published]
 
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
@@ -25,7 +27,7 @@ defaults:
     shell: bash
 
 jobs:
-  build:
+  ios-build:
     # The CMake configure and build commands are platform agnostic and should work equally
     # well on Windows or Mac.  You can convert this to a matrix build if you need
     # cross-platform coverage.
@@ -66,3 +68,36 @@ jobs:
         path: build/
         retention-days: 14
         overwrite: true
+
+  # Publish artifacts to GitHub releases (only on release events)
+  publish-release-ios:
+    if: github.event_name == 'release' && github.event.action == 'published'
+    needs:
+      - ios-build
+    runs-on: ubuntu-latest
+    name: 🚀 Publish Release Artifacts
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v6
+      with:
+        path: artifacts
+        pattern: fluidsynth-*
+        merge-multiple: false
+        
+    - name: Create release archives
+      run: |
+        cd artifacts
+        ls -la
+        for dir in */; do
+            echo "Creating archive for $dir"
+            zip -r "${dir%/}.zip" "$dir"
+        done
+        ls -la *.zip
+
+    - name: Upload release assets
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          artifacts/*.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
