@@ -60,13 +60,14 @@ jobs:
         fi
         mkdir publish
         ls -la . SDL SDL/*
-        cp -vr build/FluidSynth.xcframework SDL/Xcode/SDL/build/SDL3.xcframework  publish/
+        cp -r build/FluidSynth.xcframework SDL/Xcode/SDL/build/SDL3.xcframework  publish/
+        ls -la publish
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v5
       with:
         name: ${{ steps.artifact_name.outputs.name }}-iOS
-        path: build/
+        path: publish/
         retention-days: 14
         overwrite: true
 
