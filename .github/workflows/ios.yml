@@ -90,11 +90,7 @@ jobs:
       run: |
         cd artifacts
         ls -la
-        for dir in */; do
-            echo "Creating archive for $dir"
-            zip -r "${dir%/}.zip" "$dir"
-        done
-        ls -la *.zip
+        zip -r "${{ steps.artifact_name.outputs.name }}-iOS.zip" "."
 
     - name: Upload release assets
       uses: softprops/action-gh-release@v2
