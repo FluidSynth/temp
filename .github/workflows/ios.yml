@@ -82,15 +82,14 @@ jobs:
     - name: Download all artifacts
       uses: actions/download-artifact@v6
       with:
-        path: artifacts
-        pattern: fluidsynth-*
+        path: ${{ steps.artifact_name.outputs.name }}-iOS
+        pattern: ${{ steps.artifact_name.outputs.name }}-iOS
         merge-multiple: false
         
     - name: Create release archives
       run: |
-        cd artifacts
         ls -la
-        zip -r "${{ steps.artifact_name.outputs.name }}-iOS.zip" *
+        zip -r "${{ steps.artifact_name.outputs.name }}-iOS.zip" "${{ steps.artifact_name.outputs.name }}-iOS"
 
     - name: Upload release assets
       uses: softprops/action-gh-release@v2
