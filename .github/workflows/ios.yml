@@ -82,14 +82,14 @@ jobs:
     - name: Download all artifacts
       uses: actions/download-artifact@v6
       with:
-        path: ${{ steps.artifact_name.outputs.name }}-iOS
-        pattern: ${{ steps.artifact_name.outputs.name }}-iOS
+        path: ${{ needs.ios-build.outputs.artifact_name }}-iOS
+        pattern: ${{ needs.ios-build.outputs.artifact_name }}-iOS
         merge-multiple: false
         
     - name: Create release archives
       run: |
         ls -la
-        zip -r "${{ steps.artifact_name.outputs.name }}-iOS.zip" "${{ steps.artifact_name.outputs.name }}-iOS"
+        zip -r "${{ steps.artifact_name.outputs.name }}-iOS.zip" "${{ needs.ios-build.outputs.artifact_name }}-iOS"
 
     - name: Upload release assets
       uses: softprops/action-gh-release@v2
