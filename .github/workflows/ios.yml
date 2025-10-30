@@ -33,6 +33,8 @@ jobs:
     # cross-platform coverage.
     # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
     runs-on: macos-latest
+    outputs:
+      artifact_name: ${{ steps.artifact_name.outputs.name }}
     steps:
     - uses: actions/checkout@v5
       with:
@@ -89,7 +91,7 @@ jobs:
     - name: Create release archives
       run: |
         ls -la
-        zip -r "${{ steps.artifact_name.outputs.name }}-iOS.zip" "${{ needs.ios-build.outputs.artifact_name }}-iOS"
+        zip -r "${{ needs.ios-build.outputs.artifact_name }}-iOS.zip" "${{ needs.ios-build.outputs.artifact_name }}-iOS"
 
     - name: Upload release assets
       uses: softprops/action-gh-release@v2
