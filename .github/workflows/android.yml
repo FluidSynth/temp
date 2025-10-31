@@ -33,7 +33,7 @@ env:
   OPUS_VERSION: '1.5.2'
   FLAC_VERSION: '1.4.3'
   PCRE_VERSION: '8.45'
-  
+
   # Set Android target API level
   ANDROID_API: '24'
   
@@ -140,7 +140,7 @@ jobs:
         if: github.event_name != 'schedule'
         uses: actions/cache@v4
         with:
-          key: ${{ matrix.arch }}-${{ env.ANDROID_API }}-android-deps-v1
+          key: ${{ matrix.arch }}-${{ env.ANDROID_API }}-android-deps-${{ env.GLIB_VERSION }}-${{ env.OBOE_VERSION }}-${{ env.SNDFILE_VERSION }}-v1
           path: ${{ github.workspace }}/android-build-root/opt/android
 
       - name: Install build tools
