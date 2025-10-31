@@ -1,0 +1,94 @@
+# usage
+#       - name: Build via composite action steps
+#        uses: ./.github/actions/cmake-android
+#        with:
+#          sourceDir: .
+#          workDir: .
+#          cmakeArgs: ""
+#          installCommand: "make install"
+#          cache_restored: ${{ steps.cache.outputs.cache-hit }}
+name: "CMake Android (Steps)"
+description: "Android CMake build steps mirroring the Azure template"
+inputs:
+  cmakeArgs:
+    description: "Extra CMake arguments"
+    required: false
+    default: ""
+  sourceDir:
+    description: "Path to the source directory (contains CMakeLists.txt)"
+    required: false
+    default: ""
+  workDir:
+    description: "Working directory (equivalent to $(DEV) in Azure)"
+    required: false
+    default: "."
+  installCommand:
+    description: "Install command to run after build"
+    required: false
+    default: "make install"
+  cache_restored:
+    description: "Mimic Azure condition: skip compile when cache restored ('true' to skip)"
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Compile ${{ inputs.sourceDir }}
+      if: ${{ inputs.cache_restored != 'true' }}
+      working-directory: ${{ inputs.workDir }}
+      shell: bash
+      run: |
+        set -ex
+
+        # Defaults and sanity checks
+        if [[ -z "${NDK:-}" && -n "${ANDROID_NDK_LATEST_HOME:-}" ]]; then
+          export NDK="$ANDROID_NDK_LATEST_HOME"
+        fi
+        : "${NDK:?NDK is required or provide ANDROID_NDK_LATEST_HOME on the runner}"
+        : "${ANDROID_API:?ANDROID_API is required}"
+        : "${ANDROID_ABI_CMAKE:?ANDROID_ABI_CMAKE is required}"
+        : "${CC:=clang}"
+        : "${PREFIX:?PREFIX is required}"
+        : "${CFLAGS:=}"
+        : "${LDFLAGS:=}"
+
+        pushd "${{ inputs.sourceDir }}"
+        mkdir -p build
+        pushd build
+
+        cmake -G "Unix Makefiles" \
+          -DCMAKE_MAKE_PROGRAM=make \
+          -DCMAKE_TOOLCHAIN_FILE="${NDK}/build/cmake/android.toolchain.cmake" \
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+          -DANDROID_NATIVE_API_LEVEL="${ANDROID_API}" \
+          -DANDROID_ABI="${ANDROID_ABI_CMAKE}" \
+          -DANDROID_TOOLCHAIN="${CC}" \
+          -DANDROID_NDK="${NDK}" \
+          -DANDROID_COMPILER_FLAGS="${CFLAGS// /;}" \
+          -DANDROID_LINKER_FLAGS="${LDFLAGS// /;}" \
+          -DANDROID_STL="c++_shared" \
+          -DCMAKE_REQUIRED_FLAGS="${CFLAGS}" \
+          -DCMAKE_REQUIRED_LINK_OPTIONS="${LDFLAGS// /;}" \
+          -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
+          -DCMAKE_STAGING_PREFIX="${PREFIX}" \
+          -DCMAKE_VERBOSE_MAKEFILE=1 \
+          -DBUILD_SHARED_LIBS=1 \
+          -DLIB_SUFFIX= \
+          ${{ inputs.cmakeArgs }} ..
+
+        make -j$((`nproc`+1))
+        ${{ inputs.installCommand }}
+        popd
+        popd
+
+    - name: Print ${{ inputs.sourceDir }} CMake Error Log
+      if: ${{ always() }}
+      working-directory: ${{ inputs.workDir }}
+      shell: bash
+      run: |
+        set +e
+        ls -la "${{ inputs.sourceDir }}/build/CMakeFiles/" || true
+        cat "${{ inputs.sourceDir }}/build/CMakeFiles/CMakeError.log" || true
+        cat "${{ inputs.sourceDir }}/build/CMakeFiles/CMakeOutput.log" || true
+        true
