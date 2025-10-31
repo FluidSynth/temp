@@ -38,28 +38,6 @@ env:
   # Android NDK sources and standalone toolchain is put here
   DEV: '${{ github.workspace }}/android-build-root'
 
-  # This is a symlink pointing to the real Android NDK
-  # Must be the same as $ANDROID_NDK_HOME see:
-  # https://github.com/actions/virtual-environments/blob/main/images/linux/Ubuntu2004-README.md
-  # We cannot use $ANDROID_NDK_HOME because this is an environment variable, but here, we need a compile-time constant.
-  NDK: '/usr/local/lib/android/sdk/ndk/27.3.13750724'
-
-  # All the built binaries, libs and their headers will be installed here
-  PREFIX: '${{ env.DEV }}/opt/android'
-
-  # Prevent installing to lib64/
-  # This becomes important, if you would build on e.g. openSUSE
-  LIBPATH0: '${{ env.PREFIX }}/lib'
-
-  # The path of standalone NDK toolchain
-  # Refer to https://developer.android.com/ndk/guides/standalone_toolchain.html
-  NDK_TOOLCHAIN: '${{ env.NDK }}/toolchains/llvm/prebuilt/linux-x86_64/'
-
-  # Don't mix up .pc files from your host and build target
-  PKG_CONFIG_PATH: '${{ envLIBPATH0}}/pkgconfig'
-  # setting PKG_CONFIG_PATH alone does not seem to be enough to avoid mixing up with the host, also set PKG_CONFIG_LIBDIR
-  PKG_CONFIG_LIBDIR: '${{ env.PKG_CONFIG_PATH }}'
-
   # Set Android target API level
   # when compiling with clang use at least 28 as this makes sure that android provides the posix_spawn functions, so the compilation of gettext will (should) work out of the box
   # it's probably a bug of gettext, if posix_spawn is not available it replaces it with its own implementation. Autotools of gettext set HAVE_POSIX_SPAWN==0 (which is correct) but for some reason REPLACE_POSIX_SPAWN==0 (which is wrong, as it should be 1).
@@ -67,14 +45,8 @@ env:
   # NOTE: API 24 is required because it provides fseeko() and ftello() required by libflac
   ANDROID_API: '24'
 
-  # Tell configure what flags Android requires.
-  # Turn Wimplicit-function-declaration into errors. Else autotools will be fooled when checking for available functions (that in fact are NOT available) and compilation will fail later on.
-  CFLAGS: "-fPIE -fPIC -I${{ env.PREFIX }}/include --sysroot=${{ env.NDK_TOOLCHAIN }}/sysroot -I${{ env.NDK_TOOLCHAIN }}/sysroot/usr/include -Werror=implicit-function-declaration"
-  CXXFLAGS: ${{ env.CFLAGS }}
-  CPPFLAGS: ${{ env.CXXFLAGS }}
   DEBIAN_FRONTEND: 'noninteractive'
 
-  ARTIFACT_NAME: 'fluidsynth-android${{ env.ANDROID_API }}'
 
 permissions:
   contents: read
@@ -192,6 +164,41 @@ jobs:
       - name: Set environment variables
         run: |
           set -e
+          NDK="${ANDROID_NDK_HOME}"
+          echo "NDK=$NDK" >> $GITHUB_ENV
+          
+          # All the built binaries, libs and their headers will be installed here
+          PREFIX="${{ env.DEV }}/opt/android"
+          echo "PREFIX=$PREFIX" >> $GITHUB_ENV
+          
+          # Prevent installing to lib64/
+          # This becomes important, if you would build on e.g. openSUSE
+          LIBPATH0="${PREFIX}/lib"
+          echo "LIBPATH0=$LIBPATH0" >> $GITHUB_ENV
+          
+          # The path of standalone NDK toolchain
+          # Refer to https://developer.android.com/ndk/guides/standalone_toolchain.html
+          NDK_TOOLCHAIN="${NDK}/toolchains/llvm/prebuilt/linux-x86_64/"
+          echo "NDK_TOOLCHAIN=$NDK_TOOLCHAIN" >> $GITHUB_ENV
+          
+          # Don't mix up .pc files from your host and build target
+          PKG_CONFIG_PATH="${LIBPATH0}/pkgconfig"
+          echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH" >> $GITHUB_ENV
+          
+          # setting PKG_CONFIG_PATH alone does not seem to be enough to avoid mixing up with the host, also set PKG_CONFIG_LIBDIR
+          PKG_CONFIG_LIBDIR="${PKG_CONFIG_PATH}"
+          echo "PKG_CONFIG_LIBDIR=$PKG_CONFIG_LIBDIR" >> $GITHUB_ENV
+          
+          # Tell configure what flags Android requires.
+          # Turn Wimplicit-function-declaration into errors. Else autotools will be fooled when checking for available functions (that in fact are NOT available) and compilation will fail later on.
+          CFLAGS="-fPIE -fPIC -I${PREFIX}/include --sysroot=${NDK_TOOLCHAIN}/sysroot -I${NDK_TOOLCHAIN}/sysroot/usr/include -Werror=implicit-function-declaration"
+          echo "CFLAGS=$CFLAGS" >> $GITHUB_ENV
+          CXXFLAGS=${CFLAGS}
+          echo "CXXFLAGS=$CXXFLAGS" >> $GITHUB_ENV
+          CPPFLAGS=${CXXFLAGS}
+          echo "CPPFLAGS=$CPPFLAGS" >> $GITHUB_ENV
+          ARTIFACT_NAME="fluidsynth-android${ANDROID_API}"
+          echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> $GITHUB_ENV
           
           # The cross-compile toolchain we use
           ANDROID_TARGET="${{ matrix.arch }}-linux-android${{ matrix.android_target_abi }}"
@@ -201,15 +208,15 @@ jobs:
           echo "ANDROID_TARGET_API=$ANDROID_TARGET_API" >> $GITHUB_ENV
           
           # Add the standalone toolchain to the search path.
-          echo "${{ env.PREFIX }}/bin" >> $GITHUB_PATH
-          echo "${{ env.PREFIX }}/lib" >> $GITHUB_PATH
-          echo "${{ env.PREFIX }}/include" >> $GITHUB_PATH
-          echo "${{ env.NDK_TOOLCHAIN }}/bin" >> $GITHUB_PATH
+          echo "${PREFIX}/bin" >> $GITHUB_PATH
+          echo "${PREFIX}/lib" >> $GITHUB_PATH
+          echo "${PREFIX}/include" >> $GITHUB_PATH
+          echo "${NDK_TOOLCHAIN}/bin" >> $GITHUB_PATH
 
           # Linker flags
-          LIBPATH1="${{ env.NDK_TOOLCHAIN }}/sysroot/usr/lib"
-          LIBPATH2="${{ env.NDK_TOOLCHAIN }}/sysroot/usr/lib/${{ matrix.arch }}-linux-android${{ matrix.android_target_abi }}/${ANDROID_API}"
-          LIBPATH3="${{ env.NDK_TOOLCHAIN }}/sysroot/usr/lib/${{ matrix.arch }}-linux-android${{ matrix.android_target_abi }}"
+          LIBPATH1="${NDK_TOOLCHAIN}/sysroot/usr/lib"
+          LIBPATH2="${NDK_TOOLCHAIN}/sysroot/usr/lib/${{ matrix.arch }}-linux-android${{ matrix.android_target_abi }}/${ANDROID_API}"
+          LIBPATH3="${NDK_TOOLCHAIN}/sysroot/usr/lib/${{ matrix.arch }}-linux-android${{ matrix.android_target_abi }}"
 
           # Add max. page size to linker flag, see https://developer.android.com/guide/practices/page-sizes
           echo "LDFLAGS=-pie -Wl,-z,max-page-size=16384 -Wl,-rpath-link=${LIBPATH1} -L${LIBPATH1} -Wl,-rpath-link=${LIBPATH2} -L${LIBPATH2} -Wl,-rpath-link=${LIBPATH3} -L${LIBPATH3} -Wl,-rpath-link=${LIBPATH0} -L${LIBPATH0}" >> $GITHUB_ENV
@@ -248,7 +255,7 @@ jobs:
         working-directory: ${{ env.DEV }}
       
       - name: libiconv config.log
-        if: ${{ failure() && env.CACHE_RESTORED != 'true' }}
+        if: ${{ failure() && steps.cache-deps.outputs.cache-hit != 'true' }}
         working-directory: ${{ env.DEV }}
         run: |
           set -ex
@@ -389,7 +396,7 @@ jobs:
         working-directory: ${{ env.DEV }}
 
       - name: Meson LOG
-        if: ${{ failure() && env.CACHE_RESTORED != 'true' }}
+        if: ${{ failure() && steps.cache-deps.outputs.cache-hit != 'true' }}
         working-directory: ${{ env.DEV }}
         shell: bash
         run: |
