@@ -1,3 +1,12 @@
+# usage
+#       - name: Build via composite action steps
+#        uses: ./.github/actions/cmake-android
+#        with:
+#          sourceDir: .
+#          workDir: .
+#          cmakeArgs: ""
+#          installCommand: "make install"
+#          cache_restored: ${{ steps.cache.outputs.cache-hit }}
 name: "CMake Android (Steps)"
 description: "Android CMake build steps mirroring the Azure template"
 inputs:
