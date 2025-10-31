@@ -4,14 +4,15 @@ on:
   pull_request:
   push:
     paths-ignore:
-      - '.azure/azure-pipelines-alpine.yml'
-      - '.azure/azure-pipelines-mac.yml'
-      - '.azure/azure-pipelines-vcpkg.yml'
-      - '.azure/azure-pipelines-win.yml'
-      - '.azure/Dockerfile.azure-alpine'
-      - '.circleci/config.yml'
+      - '.azure/**'
+      - '.github/workflows/api_doc_build.yml'
+      - '.github/workflows/codeql-analysis.yml'
+      - '.github/workflows/codespell.yml'
       - '.github/workflows/linux.yml'
       - '.github/workflows/sonarcloud.yml'
+      - '.github/workflows/solaris.yml'
+      - '.github/workflows/windows.yml'
+      - '.github/workflows/ios.yml'
       - '.cirrus.yml'
       - 'README.md'
   schedule:
@@ -34,10 +35,46 @@ env:
   FLAC_VERSION: '1.4.3'
   PCRE_VERSION: '8.45'
 
+  # Android NDK sources and standalone toolchain is put here
+  DEV: '${{ github.workspace }}/android-build-root'
+
+  # This is a symlink pointing to the real Android NDK
+  # Must be the same as $ANDROID_NDK_HOME see:
+  # https://github.com/actions/virtual-environments/blob/main/images/linux/Ubuntu2004-README.md
+  # We cannot use $ANDROID_NDK_HOME because this is an environment variable, but here, we need a compile-time constant.
+  NDK: '/usr/local/lib/android/sdk/ndk/27.3.13750724'
+
+  # All the built binaries, libs and their headers will be installed here
+  PREFIX: '${{ env.DEV }}/opt/android'
+
+  # Prevent installing to lib64/
+  # This becomes important, if you would build on e.g. openSUSE
+  LIBPATH0: '${{ env.PREFIX }}/lib'
+
+  # The path of standalone NDK toolchain
+  # Refer to https://developer.android.com/ndk/guides/standalone_toolchain.html
+  NDK_TOOLCHAIN: '${{ env.NDK }}/toolchains/llvm/prebuilt/linux-x86_64/'
+
+  # Don't mix up .pc files from your host and build target
+  PKG_CONFIG_PATH: '${{ envLIBPATH0}}/pkgconfig'
+  # setting PKG_CONFIG_PATH alone does not seem to be enough to avoid mixing up with the host, also set PKG_CONFIG_LIBDIR
+  PKG_CONFIG_LIBDIR: '${{ env.PKG_CONFIG_PATH }}'
+
   # Set Android target API level
+  # when compiling with clang use at least 28 as this makes sure that android provides the posix_spawn functions, so the compilation of gettext will (should) work out of the box
+  # it's probably a bug of gettext, if posix_spawn is not available it replaces it with its own implementation. Autotools of gettext set HAVE_POSIX_SPAWN==0 (which is correct) but for some reason REPLACE_POSIX_SPAWN==0 (which is wrong, as it should be 1).
+  # 
+  # NOTE: API 24 is required because it provides fseeko() and ftello() required by libflac
   ANDROID_API: '24'
-  
+
+  # Tell configure what flags Android requires.
+  # Turn Wimplicit-function-declaration into errors. Else autotools will be fooled when checking for available functions (that in fact are NOT available) and compilation will fail later on.
+  CFLAGS: "-fPIE -fPIC -I${{ env.PREFIX }}/include --sysroot=${{ env.NDK_TOOLCHAIN }}/sysroot -I${{ env.NDK_TOOLCHAIN }}/sysroot/usr/include -Werror=implicit-function-declaration"
+  CXXFLAGS: ${{ env.CFLAGS }}
+  CPPFLAGS: ${{ env.CXXFLAGS }}
   DEBIAN_FRONTEND: 'noninteractive'
+
+  ARTIFACT_NAME: 'fluidsynth-android${{ env.ANDROID_API }}'
 
 permissions:
   contents: read
@@ -82,7 +119,7 @@ jobs:
       - name: Setup build directories
         run: |
           set -ex
-          mkdir -p ${{ github.workspace }}/android-build-root
+          mkdir -p ${{ env.DEV }}
 
       - name: Update apt
         run: sudo apt-get update -y
@@ -96,13 +133,13 @@ jobs:
         run: |
           set -ex
 
-          wget http://ftp.gnu.org/pub/gnu/libiconv/libiconv-${ICONV_VERSION}.tar.gz
+          wget http://ftpmirror.gnu.org/gnu/libiconv/libiconv-${ICONV_VERSION}.tar.gz
           tar zxf libiconv-${ICONV_VERSION}.tar.gz
 
           wget -O libffi-${FFI_VERSION}.tar.gz https://github.com/libffi/libffi/archive/${FFI_VERSION}.tar.gz
           tar zxf libffi-${FFI_VERSION}.tar.gz
 
-          wget http://ftp.gnu.org/pub/gnu/gettext/gettext-${GETTEXT_VERSION}.tar.gz
+          wget http://ftpmirror.gnu.org/gnu/gettext/gettext-${GETTEXT_VERSION}.tar.gz
           tar zxf gettext-${GETTEXT_VERSION}.tar.gz
 
           wget http://ftp.gnome.org/pub/gnome/sources/glib/${GLIB_VERSION}/glib-${GLIB_VERSION}.${GLIB_EXTRAVERSION}.tar.xz
@@ -132,19 +169,19 @@ jobs:
           wget -O pcre-${PCRE_VERSION}.tar.bz2 https://sourceforge.net/projects/pcre/files/pcre/${PCRE_VERSION}/pcre-${PCRE_VERSION}.tar.bz2/download
           tar jxf pcre-${PCRE_VERSION}.tar.bz2
           cd pcre-${PCRE_VERSION}
-          # CMake checks for existence of strtoq() using the C compiler - and yes, it does exist!
+          # CMake checks for the existence of strtoq() using the C compiler - and yes, it does exist!
           # Later on, it's actually used by the C++ compiler, where it does not exist.
           # Rename the function so CMake won't find it.
           sed -i 's/strtoq/strtoqqqq/g' CMakeLists.txt
-        working-directory: ${{ github.workspace }}/android-build-root
+        working-directory: ${{ env.DEV }}
 
       - name: Cache fluidsynth dependency libraries
         id: cache-deps
         if: github.event_name != 'schedule'
         uses: actions/cache@v4
         with:
-          key: ${{ matrix.arch }}-${{ env.ANDROID_API }}-android-deps-${{ env.GLIB_VERSION }}-${{ env.OBOE_VERSION }}-${{ env.SNDFILE_VERSION }}-v1
-          path: ${{ github.workspace }}/android-build-root/opt/android
+          key: ${{ matrix.arch }}-android${{ env.ANDROID_API }}-${{ env.NDK }}-${{ env.DEV }}/*.tar.*
+          path: ${{ env.PREFIX }}
 
       - name: Install build tools
         if: steps.cache-deps.outputs.cache-hit != 'true'
@@ -156,25 +193,6 @@ jobs:
         run: |
           set -e
           
-          # Android NDK path
-          echo "NDK=/usr/local/lib/android/sdk/ndk/27.3.13750724" >> $GITHUB_ENV
-          
-          # Build root directory
-          echo "DEV=${{ github.workspace }}/android-build-root" >> $GITHUB_ENV
-          
-          # Install prefix
-          echo "PREFIX=${{ github.workspace }}/android-build-root/opt/android" >> $GITHUB_ENV
-          
-          # Library path
-          echo "LIBPATH0=${{ github.workspace }}/android-build-root/opt/android/lib" >> $GITHUB_ENV
-          
-          # NDK toolchain path
-          echo "NDK_TOOLCHAIN=/usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64" >> $GITHUB_ENV
-          
-          # PKG_CONFIG paths
-          echo "PKG_CONFIG_PATH=${{ github.workspace }}/android-build-root/opt/android/lib/pkgconfig" >> $GITHUB_ENV
-          echo "PKG_CONFIG_LIBDIR=${{ github.workspace }}/android-build-root/opt/android/lib/pkgconfig" >> $GITHUB_ENV
-          
           # The cross-compile toolchain we use
           ANDROID_TARGET="${{ matrix.arch }}-linux-android${{ matrix.android_target_abi }}"
           echo "ANDROID_TARGET=$ANDROID_TARGET" >> $GITHUB_ENV
@@ -182,32 +200,30 @@ jobs:
           ANDROID_TARGET_API="${{ matrix.android_arch }}-linux-android${{ matrix.android_target_abi }}${ANDROID_API}"
           echo "ANDROID_TARGET_API=$ANDROID_TARGET_API" >> $GITHUB_ENV
           
-          # Compiler flags
-          echo "CFLAGS=-fPIE -fPIC -I${{ github.workspace }}/android-build-root/opt/android/include --sysroot=/usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot -I/usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include -Werror=implicit-function-declaration" >> $GITHUB_ENV
-          echo "CXXFLAGS=-fPIE -fPIC -I${{ github.workspace }}/android-build-root/opt/android/include --sysroot=/usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot -I/usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include -Werror=implicit-function-declaration" >> $GITHUB_ENV
-          echo "CPPFLAGS=-fPIE -fPIC -I${{ github.workspace }}/android-build-root/opt/android/include --sysroot=/usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot -I/usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include -Werror=implicit-function-declaration" >> $GITHUB_ENV
-          
+          # Add the standalone toolchain to the search path.
+          echo "${{ env.PREFIX }}/bin" >> $GITHUB_PATH
+          echo "${{ env.PREFIX }}/lib" >> $GITHUB_PATH
+          echo "${{ env.PREFIX }}/include" >> $GITHUB_PATH
+          echo "${{ env.NDK_TOOLCHAIN }}/bin" >> $GITHUB_PATH
+
           # Linker flags
-          LIBPATH1="/usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib"
-          LIBPATH2="/usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/${{ matrix.arch }}-linux-android${{ matrix.android_target_abi }}/${ANDROID_API}"
-          LIBPATH3="/usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/${{ matrix.arch }}-linux-android${{ matrix.android_target_abi }}"
-          LIBPATH0="${{ github.workspace }}/android-build-root/opt/android/lib"
+          LIBPATH1="${{ env.NDK_TOOLCHAIN }}/sysroot/usr/lib"
+          LIBPATH2="${{ env.NDK_TOOLCHAIN }}/sysroot/usr/lib/${{ matrix.arch }}-linux-android${{ matrix.android_target_abi }}/${ANDROID_API}"
+          LIBPATH3="${{ env.NDK_TOOLCHAIN }}/sysroot/usr/lib/${{ matrix.arch }}-linux-android${{ matrix.android_target_abi }}"
+
+          # Add max. page size to linker flag, see https://developer.android.com/guide/practices/page-sizes
           echo "LDFLAGS=-pie -Wl,-z,max-page-size=16384 -Wl,-rpath-link=${LIBPATH1} -L${LIBPATH1} -Wl,-rpath-link=${LIBPATH2} -L${LIBPATH2} -Wl,-rpath-link=${LIBPATH3} -L${LIBPATH3} -Wl,-rpath-link=${LIBPATH0} -L${LIBPATH0}" >> $GITHUB_ENV
           
-          # Toolchain binaries
+          # Tell configure what tools to use.
           echo "AR=llvm-ar" >> $GITHUB_ENV
-          echo "AS=$ANDROID_TARGET_API-clang" >> $GITHUB_ENV
-          echo "CC=$ANDROID_TARGET_API-clang" >> $GITHUB_ENV
-          echo "CXX=$ANDROID_TARGET_API-clang++" >> $GITHUB_ENV
+          echo "AS=${ANDROID_TARGET_API}-clang" >> $GITHUB_ENV
+          echo "CC=${ANDROID_TARGET_API}-clang" >> $GITHUB_ENV
+          echo "CXX=${ANDROID_TARGET_API}-clang++" >> $GITHUB_ENV
           echo "LD=ld.lld" >> $GITHUB_ENV
           echo "STRIP=llvm-strip" >> $GITHUB_ENV
           echo "RANLIB=llvm-ranlib" >> $GITHUB_ENV
           
-          # Add to PATH
-          echo "/usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/bin" >> $GITHUB_PATH
-          echo "${{ github.workspace }}/android-build-root/opt/android/bin" >> $GITHUB_PATH
-
-      - name: Compile libiconv
+      - name: Compile libiconv-${{ env.ICONV_VERSION }}
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
           set -ex
@@ -229,8 +245,17 @@ jobs:
           make -j$((`nproc`+1))
           make install
           popd
-        working-directory: ${{ github.workspace }}/android-build-root
-
+        working-directory: ${{ env.DEV }}
+      
+      - name: libiconv config.log
+        if: ${{ failure() && env.CACHE_RESTORED != 'true' }}
+        working-directory: ${{ env.DEV }}
+        run: |
+          set -ex
+          pushd "libiconv-${ICONV_VERSION}"
+          cat config.log
+          popd
+            
       - name: Compile libffi
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
@@ -238,11 +263,14 @@ jobs:
           
           pushd libffi-${FFI_VERSION}
           NOCONFIGURE=true autoreconf -v -i
+          # install headers into the conventional ${PREFIX}/include rather than ${PREFIX}/lib/libffi-3.2.1/include.
+          #sed -e '/^includesdir/ s/$(libdir).*$/$(includedir)/' -i include/Makefile.in
+          #sed -e '/^includedir/ s/=.*$/=@includedir@/' -e 's/^Cflags: -I${includedir}/Cflags:/' -i libffi.pc.in
           ./configure --host=${{ matrix.autotools_target }} --prefix=${PREFIX} --libdir=${LIBPATH0} --enable-static --disable-shared
           make -j$((`nproc`+1))
           make install
           popd
-        working-directory: ${{ github.workspace }}/android-build-root
+        working-directory: ${{ env.DEV }}
 
       - name: Compile gettext
         if: steps.cache-deps.outputs.cache-hit != 'true'
@@ -270,7 +298,7 @@ jobs:
           make -j$((`nproc`+1))
           make install
           popd
-        working-directory: ${{ github.workspace }}/android-build-root
+        working-directory: ${{ env.DEV }}
 
       - name: Compile pcre
         if: steps.cache-deps.outputs.cache-hit != 'true'
@@ -304,7 +332,7 @@ jobs:
           make install
           popd
           popd
-        working-directory: ${{ github.workspace }}/android-build-root
+        working-directory: ${{ env.DEV }}
 
       - name: Compile glib (meson)
         if: steps.cache-deps.outputs.cache-hit != 'true'
@@ -349,12 +377,26 @@ jobs:
           EOF
 
           cat cross_file.ini
-
+    
+          # When CC and CXX are set, then meson detects them as host compiler (not cross compiler),
+          # so they tries to run arm binaries in x86. That's why sanity check is failing, and that's
+          # why we have to use env -i.
+          # And we must explicitly set PKG_CONFIG_LIBDIR, because pkg_config_libdir is only recognized by meson >= 0.54
           env -i bash -c "export PATH && export PKG_CONFIG_LIBDIR=${PKG_CONFIG_LIBDIR} && meson setup build --cross-file cross_file.ini --prefix=${PREFIX}"
           ninja -C build
           ninja -C build install
           popd
-        working-directory: ${{ github.workspace }}/android-build-root
+        working-directory: ${{ env.DEV }}
+
+      - name: Meson LOG
+        if: ${{ failure() && env.CACHE_RESTORED != 'true' }}
+        working-directory: ${{ env.DEV }}
+        shell: bash
+        run: |
+          pushd glib-${GLIB_VERSION}.${GLIB_EXTRAVERSION}
+          ls -la build
+          cat build/meson-logs/meson-log.txt
+          popd
 
       - name: Compile libogg
         if: steps.cache-deps.outputs.cache-hit != 'true'
@@ -388,7 +430,7 @@ jobs:
           make install
           popd
           popd
-        working-directory: ${{ github.workspace }}/android-build-root
+        working-directory: ${{ env.DEV }}
 
       - name: Compile libvorbis
         if: steps.cache-deps.outputs.cache-hit != 'true'
@@ -422,7 +464,7 @@ jobs:
           make install
           popd
           popd
-        working-directory: ${{ github.workspace }}/android-build-root
+        working-directory: ${{ env.DEV }}
 
       - name: Compile flac
         if: steps.cache-deps.outputs.cache-hit != 'true'
@@ -456,7 +498,7 @@ jobs:
           make install
           popd
           popd
-        working-directory: ${{ github.workspace }}/android-build-root
+        working-directory: ${{ env.DEV }}
 
       - name: Compile opus
         if: steps.cache-deps.outputs.cache-hit != 'true'
@@ -490,7 +532,7 @@ jobs:
           make install
           popd
           popd
-        working-directory: ${{ github.workspace }}/android-build-root
+        working-directory: ${{ env.DEV }}
 
       - name: Compile libsndfile
         if: steps.cache-deps.outputs.cache-hit != 'true'
@@ -524,7 +566,7 @@ jobs:
           make install
           popd
           popd
-        working-directory: ${{ github.workspace }}/android-build-root
+        working-directory: ${{ env.DEV }}
 
       - name: Compile oboe
         if: steps.cache-deps.outputs.cache-hit != 'true'
@@ -558,7 +600,7 @@ jobs:
           cp liboboe.* ${PREFIX}/lib/ && cp -ur ../include/oboe ${PREFIX}/include
           popd
           popd
-        working-directory: ${{ github.workspace }}/android-build-root
+        working-directory: ${{ env.DEV }}
 
       - name: Create fake oboe.pc
         if: steps.cache-deps.outputs.cache-hit != 'true'
@@ -579,7 +621,7 @@ jobs:
           EOF
 
           cat ${PKG_CONFIG_PATH}/oboe-1.0.pc
-        working-directory: ${{ github.workspace }}/android-build-root
+        working-directory: ${{ env.DEV }}
 
       - name: Compile libinstpatch
         if: steps.cache-deps.outputs.cache-hit != 'true'
@@ -613,7 +655,7 @@ jobs:
           make install
           popd
           popd
-        working-directory: ${{ github.workspace }}/android-build-root
+        working-directory: ${{ env.DEV }}
 
       - name: Compile fluidsynth
         run: |
@@ -720,7 +762,7 @@ jobs:
           ls libvorbisfile.so
           ls libpcre.so
           ls libpcreposix.so
-        working-directory: ${{ github.workspace }}/android-build-root/opt/android/lib
+        working-directory: ${{ env.DEV }}/opt/android/lib
 
       - name: Assert 16K page alignment
         run: |
