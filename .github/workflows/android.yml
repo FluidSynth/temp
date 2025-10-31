@@ -1,0 +1,739 @@
+name: FluidSynth Android
+
+on:
+  pull_request:
+  push:
+    paths-ignore:
+      - '.azure/azure-pipelines-alpine.yml'
+      - '.azure/azure-pipelines-mac.yml'
+      - '.azure/azure-pipelines-vcpkg.yml'
+      - '.azure/azure-pipelines-win.yml'
+      - '.azure/Dockerfile.azure-alpine'
+      - '.circleci/config.yml'
+      - '.github/workflows/linux.yml'
+      - '.github/workflows/sonarcloud.yml'
+      - '.cirrus.yml'
+      - 'README.md'
+  schedule:
+    # Weekly Monday Midnight build without caching
+    - cron: '0 0 * * 1'
+
+env:
+  ICONV_VERSION: '1.17'
+  # libffi 3.4.4 fails due to https://github.com/libffi/libffi/issues/760
+  FFI_VERSION: 'ce077e5565366171aa1b4438749b0922fce887a4'
+  GETTEXT_VERSION: '0.22.5'
+  GLIB_VERSION: '2.72'
+  GLIB_EXTRAVERSION: '4'
+  OBOE_VERSION: '1.9.0'
+  SNDFILE_VERSION: '1.2.2'
+  INSTPATCH_VERSION: '1.1.6'
+  VORBIS_VERSION: '1.3.7'
+  OGG_VERSION: '1.3.5'
+  OPUS_VERSION: '1.5.2'
+  FLAC_VERSION: '1.4.3'
+  PCRE_VERSION: '8.45'
+  
+  # Set Android target API level
+  ANDROID_API: '24'
+  
+  DEBIAN_FRONTEND: 'noninteractive'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        include:
+          - arch: 'arm'
+            android_arch: 'armv7a'
+            android_abi_cmake: 'armeabi-v7a'
+            android_target_abi: 'eabi'
+            android_abi_meson: 'arm'
+            autotools_target: 'arm-linux-androideabi'
+          - arch: 'aarch64'
+            android_arch: 'aarch64'
+            android_abi_cmake: 'arm64-v8a'
+            android_target_abi: ''
+            android_abi_meson: 'aarch64'
+            autotools_target: 'aarch64-none-linux-android'
+          - arch: 'i686'
+            android_arch: 'i686'
+            android_abi_cmake: 'x86'
+            android_target_abi: ''
+            android_abi_meson: 'x86'
+            autotools_target: 'i686-pc-linux-android'
+          - arch: 'x86_64'
+            android_arch: 'x86_64'
+            android_abi_cmake: 'x86_64'
+            android_target_abi: ''
+            android_abi_meson: 'x86_64'
+            autotools_target: 'x86_64-pc-linux-android'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Setup build directories
+        run: |
+          set -ex
+          mkdir -p ${{ github.workspace }}/android-build-root
+
+      - name: Update apt
+        run: sudo apt-get update -y
+
+      - name: Install wget and tar
+        run: |
+          set -ex
+          sudo -E apt-get -y --no-install-suggests --no-install-recommends install wget tar bzip2 xz-utils ca-certificates
+
+      - name: Download Dependencies
+        run: |
+          set -ex
+
+          wget http://ftp.gnu.org/pub/gnu/libiconv/libiconv-${ICONV_VERSION}.tar.gz
+          tar zxf libiconv-${ICONV_VERSION}.tar.gz
+
+          wget -O libffi-${FFI_VERSION}.tar.gz https://github.com/libffi/libffi/archive/${FFI_VERSION}.tar.gz
+          tar zxf libffi-${FFI_VERSION}.tar.gz
+
+          wget http://ftp.gnu.org/pub/gnu/gettext/gettext-${GETTEXT_VERSION}.tar.gz
+          tar zxf gettext-${GETTEXT_VERSION}.tar.gz
+
+          wget http://ftp.gnome.org/pub/gnome/sources/glib/${GLIB_VERSION}/glib-${GLIB_VERSION}.${GLIB_EXTRAVERSION}.tar.xz
+          tar xf glib-${GLIB_VERSION}.${GLIB_EXTRAVERSION}.tar.xz
+
+          wget -O oboe-${OBOE_VERSION}.tar.gz https://github.com/google/oboe/archive/${OBOE_VERSION}.tar.gz
+          tar zxf oboe-${OBOE_VERSION}.tar.gz
+
+          wget https://github.com/libsndfile/libsndfile/releases/download/${SNDFILE_VERSION}/libsndfile-${SNDFILE_VERSION}.tar.xz
+          tar xf libsndfile-${SNDFILE_VERSION}.tar.xz
+
+          wget -O libinstpatch-${INSTPATCH_VERSION}.tar.gz https://github.com/swami/libinstpatch/archive/refs/tags/v${INSTPATCH_VERSION}.tar.gz
+          tar zxf libinstpatch-${INSTPATCH_VERSION}.tar.gz
+
+          wget https://github.com/xiph/vorbis/releases/download/v${VORBIS_VERSION}/libvorbis-${VORBIS_VERSION}.tar.gz
+          tar zxf libvorbis-${VORBIS_VERSION}.tar.gz
+
+          wget https://github.com/xiph/ogg/releases/download/v${OGG_VERSION}/libogg-${OGG_VERSION}.tar.gz
+          tar zxf libogg-${OGG_VERSION}.tar.gz
+
+          wget -O flac-${FLAC_VERSION}.tar.gz https://github.com/xiph/flac/archive/refs/tags/${FLAC_VERSION}.tar.gz
+          tar xf flac-${FLAC_VERSION}.tar.gz
+
+          wget -O opus-${OPUS_VERSION}.tar.gz https://github.com/xiph/opus/archive/refs/tags/v${OPUS_VERSION}.tar.gz
+          tar xf opus-${OPUS_VERSION}.tar.gz
+
+          wget -O pcre-${PCRE_VERSION}.tar.bz2 https://sourceforge.net/projects/pcre/files/pcre/${PCRE_VERSION}/pcre-${PCRE_VERSION}.tar.bz2/download
+          tar jxf pcre-${PCRE_VERSION}.tar.bz2
+          cd pcre-${PCRE_VERSION}
+          # CMake checks for existence of strtoq() using the C compiler - and yes, it does exist!
+          # Later on, it's actually used by the C++ compiler, where it does not exist.
+          # Rename the function so CMake won't find it.
+          sed -i 's/strtoq/strtoqqqq/g' CMakeLists.txt
+        working-directory: ${{ github.workspace }}/android-build-root
+
+      - name: Cache fluidsynth dependency libraries
+        id: cache-deps
+        if: github.event_name != 'schedule'
+        uses: actions/cache@v4
+        with:
+          key: ${{ matrix.arch }}-${{ env.ANDROID_API }}-android-deps-v1
+          path: ${{ github.workspace }}/android-build-root/opt/android
+
+      - name: Install build tools
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          set -ex
+          sudo -E apt-get -y --no-install-suggests --no-install-recommends install gettext cmake zlib1g-dev autogen automake autoconf libtool pkg-config autotools-dev build-essential meson ninja-build python3-distutils
+
+      - name: Set environment variables
+        run: |
+          set -e
+          
+          # Android NDK path
+          echo "NDK=/usr/local/lib/android/sdk/ndk/27.3.13750724" >> $GITHUB_ENV
+          
+          # Build root directory
+          echo "DEV=${{ github.workspace }}/android-build-root" >> $GITHUB_ENV
+          
+          # Install prefix
+          echo "PREFIX=${{ github.workspace }}/android-build-root/opt/android" >> $GITHUB_ENV
+          
+          # Library path
+          echo "LIBPATH0=${{ github.workspace }}/android-build-root/opt/android/lib" >> $GITHUB_ENV
+          
+          # NDK toolchain path
+          echo "NDK_TOOLCHAIN=/usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64" >> $GITHUB_ENV
+          
+          # PKG_CONFIG paths
+          echo "PKG_CONFIG_PATH=${{ github.workspace }}/android-build-root/opt/android/lib/pkgconfig" >> $GITHUB_ENV
+          echo "PKG_CONFIG_LIBDIR=${{ github.workspace }}/android-build-root/opt/android/lib/pkgconfig" >> $GITHUB_ENV
+          
+          # The cross-compile toolchain we use
+          ANDROID_TARGET="${{ matrix.arch }}-linux-android${{ matrix.android_target_abi }}"
+          echo "ANDROID_TARGET=$ANDROID_TARGET" >> $GITHUB_ENV
+          
+          ANDROID_TARGET_API="${{ matrix.android_arch }}-linux-android${{ matrix.android_target_abi }}${ANDROID_API}"
+          echo "ANDROID_TARGET_API=$ANDROID_TARGET_API" >> $GITHUB_ENV
+          
+          # Compiler flags
+          echo "CFLAGS=-fPIE -fPIC -I${{ github.workspace }}/android-build-root/opt/android/include --sysroot=/usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot -I/usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include -Werror=implicit-function-declaration" >> $GITHUB_ENV
+          echo "CXXFLAGS=-fPIE -fPIC -I${{ github.workspace }}/android-build-root/opt/android/include --sysroot=/usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot -I/usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include -Werror=implicit-function-declaration" >> $GITHUB_ENV
+          echo "CPPFLAGS=-fPIE -fPIC -I${{ github.workspace }}/android-build-root/opt/android/include --sysroot=/usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot -I/usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include -Werror=implicit-function-declaration" >> $GITHUB_ENV
+          
+          # Linker flags
+          LIBPATH1="/usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib"
+          LIBPATH2="/usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/${{ matrix.arch }}-linux-android${{ matrix.android_target_abi }}/${ANDROID_API}"
+          LIBPATH3="/usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/${{ matrix.arch }}-linux-android${{ matrix.android_target_abi }}"
+          LIBPATH0="${{ github.workspace }}/android-build-root/opt/android/lib"
+          echo "LDFLAGS=-pie -Wl,-z,max-page-size=16384 -Wl,-rpath-link=${LIBPATH1} -L${LIBPATH1} -Wl,-rpath-link=${LIBPATH2} -L${LIBPATH2} -Wl,-rpath-link=${LIBPATH3} -L${LIBPATH3} -Wl,-rpath-link=${LIBPATH0} -L${LIBPATH0}" >> $GITHUB_ENV
+          
+          # Toolchain binaries
+          echo "AR=llvm-ar" >> $GITHUB_ENV
+          echo "AS=$ANDROID_TARGET_API-clang" >> $GITHUB_ENV
+          echo "CC=$ANDROID_TARGET_API-clang" >> $GITHUB_ENV
+          echo "CXX=$ANDROID_TARGET_API-clang++" >> $GITHUB_ENV
+          echo "LD=ld.lld" >> $GITHUB_ENV
+          echo "STRIP=llvm-strip" >> $GITHUB_ENV
+          echo "RANLIB=llvm-ranlib" >> $GITHUB_ENV
+          
+          # Add to PATH
+          echo "/usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/bin" >> $GITHUB_PATH
+          echo "${{ github.workspace }}/android-build-root/opt/android/bin" >> $GITHUB_PATH
+
+      - name: Compile libiconv
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          set -ex
+          
+          pushd libiconv-${ICONV_VERSION}
+          ./configure \
+            --host=${{ matrix.autotools_target }} \
+            --prefix=${PREFIX} \
+            --libdir=${LIBPATH0} \
+            --disable-rpath \
+            --enable-static \
+            --disable-shared \
+            --with-pic \
+            --disable-maintainer-mode \
+            --disable-silent-rules \
+            --disable-gtk-doc \
+            --disable-introspection \
+            --disable-nls
+          make -j$((`nproc`+1))
+          make install
+          popd
+        working-directory: ${{ github.workspace }}/android-build-root
+
+      - name: Compile libffi
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          set -ex
+          
+          pushd libffi-${FFI_VERSION}
+          NOCONFIGURE=true autoreconf -v -i
+          ./configure --host=${{ matrix.autotools_target }} --prefix=${PREFIX} --libdir=${LIBPATH0} --enable-static --disable-shared
+          make -j$((`nproc`+1))
+          make install
+          popd
+        working-directory: ${{ github.workspace }}/android-build-root
+
+      - name: Compile gettext
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          set -ex
+          
+          pushd gettext-${GETTEXT_VERSION}
+          ./configure \
+            --host=${{ matrix.autotools_target }} \
+            --prefix=${PREFIX} \
+            --libdir=${LIBPATH0} \
+            --disable-rpath \
+            --disable-libasprintf \
+            --disable-java \
+            --disable-native-java \
+            --disable-openmp \
+            --disable-curses \
+            --enable-static \
+            --disable-shared \
+            --with-pic  \
+            --disable-maintainer-mode \
+            --disable-silent-rules \
+            --disable-gtk-doc \
+            --disable-introspection
+          make -j$((`nproc`+1))
+          make install
+          popd
+        working-directory: ${{ github.workspace }}/android-build-root
+
+      - name: Compile pcre
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          set -ex
+          
+          pushd pcre-${PCRE_VERSION}
+          mkdir -p build
+          pushd build
+          
+          cmake -G "Unix Makefiles" \
+              -DCMAKE_MAKE_PROGRAM=make \
+              -DCMAKE_TOOLCHAIN_FILE=${NDK}/build/cmake/android.toolchain.cmake \
+              -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+              -DANDROID_NATIVE_API_LEVEL=${ANDROID_API} \
+              -DANDROID_ABI=${{ matrix.android_abi_cmake }} \
+              -DANDROID_TOOLCHAIN=${CC} \
+              -DANDROID_NDK=${NDK} \
+              -DANDROID_COMPILER_FLAGS="${CFLAGS// /;}" \
+              -DANDROID_LINKER_FLAGS="${LDFLAGS// /;}" \
+              -DANDROID_STL="c++_shared" \
+              -DCMAKE_REQUIRED_FLAGS="${CFLAGS}" \
+              -DCMAKE_REQUIRED_LINK_OPTIONS="${LDFLAGS// /;}" \
+              -DCMAKE_INSTALL_PREFIX=${PREFIX} \
+              -DCMAKE_STAGING_PREFIX=${PREFIX} \
+              -DCMAKE_VERBOSE_MAKEFILE=1 \
+              -DBUILD_SHARED_LIBS=1 \
+              -DLIB_SUFFIX= \
+              -DPCRE_SUPPORT_UNICODE_PROPERTIES=1 -DPCRE_SUPPORT_UTF=1 -DPCRE_BUILD_PCRECPP=0 -DPCRE_BUILD_TESTS=0 ..
+          make -j$((`nproc`+1))
+          make install
+          popd
+          popd
+        working-directory: ${{ github.workspace }}/android-build-root
+
+      - name: Compile glib (meson)
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          set -ex
+          export PKGCFG=`which pkg-config`
+          pushd glib-${GLIB_VERSION}.${GLIB_EXTRAVERSION}
+
+          cat << EOF > cross_file.ini
+          [host_machine]
+          system = 'android'
+          cpu_family = '${{ matrix.android_abi_meson }}'
+          cpu = '${{ matrix.android_arch }}'
+          endian = 'little'
+
+          [binaries]
+          c = '${NDK_TOOLCHAIN}/bin/${CC}'
+          cpp = '${NDK_TOOLCHAIN}/bin/${CXX}'
+          ar = '${NDK_TOOLCHAIN}/bin/${AR}'
+          as = '${NDK_TOOLCHAIN}/bin/${AS}'
+          ld = '${NDK_TOOLCHAIN}/bin/${LD}'
+          strip = '${NDK_TOOLCHAIN}/bin/${STRIP}'
+          ranlib = '${NDK_TOOLCHAIN}/bin/${RANLIB}'
+          pkgconfig = '${PKGCFG}'
+
+          [properties]
+          prefix = '${PREFIX}'
+          c_args = '${CFLAGS}'
+          cpp_args = '${CXXFLAGS}'
+          pkg_config_libdir = '${PKG_CONFIG_LIBDIR}'
+          c_link_args = '${LDFLAGS}'
+
+          [project options]
+          libmount = 'disabled'
+          xattr = false
+          selinux = 'disabled'
+          nls = 'disabled'
+          glib_debug = 'disabled'
+          glib_assert = false
+          glib_checks = false
+          libelf = 'disabled'
+          EOF
+
+          cat cross_file.ini
+
+          env -i bash -c "export PATH && export PKG_CONFIG_LIBDIR=${PKG_CONFIG_LIBDIR} && meson setup build --cross-file cross_file.ini --prefix=${PREFIX}"
+          ninja -C build
+          ninja -C build install
+          popd
+        working-directory: ${{ github.workspace }}/android-build-root
+
+      - name: Compile libogg
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          set -ex
+          
+          pushd libogg-${OGG_VERSION}
+          mkdir -p build
+          pushd build
+          
+          cmake -G "Unix Makefiles" \
+              -DCMAKE_MAKE_PROGRAM=make \
+              -DCMAKE_TOOLCHAIN_FILE=${NDK}/build/cmake/android.toolchain.cmake \
+              -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+              -DANDROID_NATIVE_API_LEVEL=${ANDROID_API} \
+              -DANDROID_ABI=${{ matrix.android_abi_cmake }} \
+              -DANDROID_TOOLCHAIN=${CC} \
+              -DANDROID_NDK=${NDK} \
+              -DANDROID_COMPILER_FLAGS="${CFLAGS// /;}" \
+              -DANDROID_LINKER_FLAGS="${LDFLAGS// /;}" \
+              -DANDROID_STL="c++_shared" \
+              -DCMAKE_REQUIRED_FLAGS="${CFLAGS}" \
+              -DCMAKE_REQUIRED_LINK_OPTIONS="${LDFLAGS// /;}" \
+              -DCMAKE_INSTALL_PREFIX=${PREFIX} \
+              -DCMAKE_STAGING_PREFIX=${PREFIX} \
+              -DCMAKE_VERBOSE_MAKEFILE=1 \
+              -DBUILD_SHARED_LIBS=1 \
+              -DLIB_SUFFIX= \
+              -DINSTALL_DOCS=0 ..
+          make -j$((`nproc`+1))
+          make install
+          popd
+          popd
+        working-directory: ${{ github.workspace }}/android-build-root
+
+      - name: Compile libvorbis
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          set -ex
+          
+          pushd libvorbis-${VORBIS_VERSION}
+          mkdir -p build
+          pushd build
+          
+          cmake -G "Unix Makefiles" \
+              -DCMAKE_MAKE_PROGRAM=make \
+              -DCMAKE_TOOLCHAIN_FILE=${NDK}/build/cmake/android.toolchain.cmake \
+              -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+              -DANDROID_NATIVE_API_LEVEL=${ANDROID_API} \
+              -DANDROID_ABI=${{ matrix.android_abi_cmake }} \
+              -DANDROID_TOOLCHAIN=${CC} \
+              -DANDROID_NDK=${NDK} \
+              -DANDROID_COMPILER_FLAGS="${CFLAGS// /;}" \
+              -DANDROID_LINKER_FLAGS="${LDFLAGS// /;}" \
+              -DANDROID_STL="c++_shared" \
+              -DCMAKE_REQUIRED_FLAGS="${CFLAGS}" \
+              -DCMAKE_REQUIRED_LINK_OPTIONS="${LDFLAGS// /;}" \
+              -DCMAKE_INSTALL_PREFIX=${PREFIX} \
+              -DCMAKE_STAGING_PREFIX=${PREFIX} \
+              -DCMAKE_VERBOSE_MAKEFILE=1 \
+              -DBUILD_SHARED_LIBS=1 \
+              -DLIB_SUFFIX= \
+              ..
+          make -j$((`nproc`+1))
+          make install
+          popd
+          popd
+        working-directory: ${{ github.workspace }}/android-build-root
+
+      - name: Compile flac
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          set -ex
+          
+          pushd flac-${FLAC_VERSION}
+          mkdir -p build
+          pushd build
+          
+          cmake -G "Unix Makefiles" \
+              -DCMAKE_MAKE_PROGRAM=make \
+              -DCMAKE_TOOLCHAIN_FILE=${NDK}/build/cmake/android.toolchain.cmake \
+              -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+              -DANDROID_NATIVE_API_LEVEL=${ANDROID_API} \
+              -DANDROID_ABI=${{ matrix.android_abi_cmake }} \
+              -DANDROID_TOOLCHAIN=${CC} \
+              -DANDROID_NDK=${NDK} \
+              -DANDROID_COMPILER_FLAGS="${CFLAGS// /;}" \
+              -DANDROID_LINKER_FLAGS="${LDFLAGS// /;}" \
+              -DANDROID_STL="c++_shared" \
+              -DCMAKE_REQUIRED_FLAGS="${CFLAGS}" \
+              -DCMAKE_REQUIRED_LINK_OPTIONS="${LDFLAGS// /;}" \
+              -DCMAKE_INSTALL_PREFIX=${PREFIX} \
+              -DCMAKE_STAGING_PREFIX=${PREFIX} \
+              -DCMAKE_VERBOSE_MAKEFILE=1 \
+              -DBUILD_SHARED_LIBS=1 \
+              -DLIB_SUFFIX= \
+              -DCMAKE_C_STANDARD=99 -DCMAKE_C_STANDARD_REQUIRED=1 -DWITH_ASM=0 -DBUILD_CXXLIBS=0 -DBUILD_PROGRAMS=0 -DBUILD_EXAMPLES=0 -DBUILD_DOCS=0 -DINSTALL_MANPAGES=0 ..
+          make -j$((`nproc`+1))
+          make install
+          popd
+          popd
+        working-directory: ${{ github.workspace }}/android-build-root
+
+      - name: Compile opus
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          set -ex
+          
+          pushd opus-${OPUS_VERSION}
+          mkdir -p build
+          pushd build
+          
+          cmake -G "Unix Makefiles" \
+              -DCMAKE_MAKE_PROGRAM=make \
+              -DCMAKE_TOOLCHAIN_FILE=${NDK}/build/cmake/android.toolchain.cmake \
+              -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+              -DANDROID_NATIVE_API_LEVEL=${ANDROID_API} \
+              -DANDROID_ABI=${{ matrix.android_abi_cmake }} \
+              -DANDROID_TOOLCHAIN=${CC} \
+              -DANDROID_NDK=${NDK} \
+              -DANDROID_COMPILER_FLAGS="${CFLAGS// /;}" \
+              -DANDROID_LINKER_FLAGS="${LDFLAGS// /;}" \
+              -DANDROID_STL="c++_shared" \
+              -DCMAKE_REQUIRED_FLAGS="${CFLAGS}" \
+              -DCMAKE_REQUIRED_LINK_OPTIONS="${LDFLAGS// /;}" \
+              -DCMAKE_INSTALL_PREFIX=${PREFIX} \
+              -DCMAKE_STAGING_PREFIX=${PREFIX} \
+              -DCMAKE_VERBOSE_MAKEFILE=1 \
+              -DBUILD_SHARED_LIBS=1 \
+              -DLIB_SUFFIX= \
+              -DBUILD_PROGRAMS=0 -DOPUS_MAY_HAVE_NEON=1 -DCMAKE_C_STANDARD=99 -DCMAKE_C_STANDARD_REQUIRED=1 ..
+          make -j$((`nproc`+1))
+          make install
+          popd
+          popd
+        working-directory: ${{ github.workspace }}/android-build-root
+
+      - name: Compile libsndfile
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          set -ex
+          
+          pushd libsndfile-${SNDFILE_VERSION}
+          mkdir -p build
+          pushd build
+          
+          cmake -G "Unix Makefiles" \
+              -DCMAKE_MAKE_PROGRAM=make \
+              -DCMAKE_TOOLCHAIN_FILE=${NDK}/build/cmake/android.toolchain.cmake \
+              -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+              -DANDROID_NATIVE_API_LEVEL=${ANDROID_API} \
+              -DANDROID_ABI=${{ matrix.android_abi_cmake }} \
+              -DANDROID_TOOLCHAIN=${CC} \
+              -DANDROID_NDK=${NDK} \
+              -DANDROID_COMPILER_FLAGS="${CFLAGS// /;}" \
+              -DANDROID_LINKER_FLAGS="${LDFLAGS// /;}" \
+              -DANDROID_STL="c++_shared" \
+              -DCMAKE_REQUIRED_FLAGS="${CFLAGS}" \
+              -DCMAKE_REQUIRED_LINK_OPTIONS="${LDFLAGS// /;}" \
+              -DCMAKE_INSTALL_PREFIX=${PREFIX} \
+              -DCMAKE_STAGING_PREFIX=${PREFIX} \
+              -DCMAKE_VERBOSE_MAKEFILE=1 \
+              -DBUILD_SHARED_LIBS=1 \
+              -DLIB_SUFFIX= \
+              -DBUILD_PROGRAMS=0 -DBUILD_EXAMPLES=0 ..
+          make -j$((`nproc`+1))
+          make install
+          popd
+          popd
+        working-directory: ${{ github.workspace }}/android-build-root
+
+      - name: Compile oboe
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          set -ex
+          
+          pushd oboe-${OBOE_VERSION}
+          mkdir -p build
+          pushd build
+          
+          cmake -G "Unix Makefiles" \
+              -DCMAKE_MAKE_PROGRAM=make \
+              -DCMAKE_TOOLCHAIN_FILE=${NDK}/build/cmake/android.toolchain.cmake \
+              -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+              -DANDROID_NATIVE_API_LEVEL=${ANDROID_API} \
+              -DANDROID_ABI=${{ matrix.android_abi_cmake }} \
+              -DANDROID_TOOLCHAIN=${CC} \
+              -DANDROID_NDK=${NDK} \
+              -DANDROID_COMPILER_FLAGS="${CFLAGS// /;}" \
+              -DANDROID_LINKER_FLAGS="${LDFLAGS// /;}" \
+              -DANDROID_STL="c++_shared" \
+              -DCMAKE_REQUIRED_FLAGS="${CFLAGS}" \
+              -DCMAKE_REQUIRED_LINK_OPTIONS="${LDFLAGS// /;}" \
+              -DCMAKE_INSTALL_PREFIX=${PREFIX} \
+              -DCMAKE_STAGING_PREFIX=${PREFIX} \
+              -DCMAKE_VERBOSE_MAKEFILE=1 \
+              -DBUILD_SHARED_LIBS=1 \
+              -DLIB_SUFFIX= \
+              ..
+          make -j$((`nproc`+1))
+          cp liboboe.* ${PREFIX}/lib/ && cp -ur ../include/oboe ${PREFIX}/include
+          popd
+          popd
+        working-directory: ${{ github.workspace }}/android-build-root
+
+      - name: Create fake oboe.pc
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          set -ex
+
+          cat << EOF > ${PKG_CONFIG_PATH}/oboe-1.0.pc
+          prefix=${PREFIX}
+          exec_prefix=\${prefix}
+          libdir=\${prefix}/lib
+          includedir=\${prefix}/include
+
+          Name: Oboe
+          Description: Oboe library
+          Version: ${OBOE_VERSION}
+          Libs: -L\${libdir} -loboe -landroid -llog
+          Cflags: -I\${includedir}
+          EOF
+
+          cat ${PKG_CONFIG_PATH}/oboe-1.0.pc
+        working-directory: ${{ github.workspace }}/android-build-root
+
+      - name: Compile libinstpatch
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          set -ex
+          
+          pushd libinstpatch-${INSTPATCH_VERSION}
+          mkdir -p build
+          pushd build
+          
+          cmake -G "Unix Makefiles" \
+              -DCMAKE_MAKE_PROGRAM=make \
+              -DCMAKE_TOOLCHAIN_FILE=${NDK}/build/cmake/android.toolchain.cmake \
+              -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+              -DANDROID_NATIVE_API_LEVEL=${ANDROID_API} \
+              -DANDROID_ABI=${{ matrix.android_abi_cmake }} \
+              -DANDROID_TOOLCHAIN=${CC} \
+              -DANDROID_NDK=${NDK} \
+              -DANDROID_COMPILER_FLAGS="${CFLAGS// /;}" \
+              -DANDROID_LINKER_FLAGS="${LDFLAGS// /;}" \
+              -DANDROID_STL="c++_shared" \
+              -DCMAKE_REQUIRED_FLAGS="${CFLAGS}" \
+              -DCMAKE_REQUIRED_LINK_OPTIONS="${LDFLAGS// /;}" \
+              -DCMAKE_INSTALL_PREFIX=${PREFIX} \
+              -DCMAKE_STAGING_PREFIX=${PREFIX} \
+              -DCMAKE_VERBOSE_MAKEFILE=1 \
+              -DBUILD_SHARED_LIBS=1 \
+              -DLIB_SUFFIX= \
+              ..
+          make -j$((`nproc`+1))
+          make install
+          popd
+          popd
+        working-directory: ${{ github.workspace }}/android-build-root
+
+      - name: Compile fluidsynth
+        run: |
+          set -ex
+          
+          mkdir -p build
+          pushd build
+          
+          cmake -G "Unix Makefiles" \
+              -DCMAKE_MAKE_PROGRAM=make \
+              -DCMAKE_TOOLCHAIN_FILE=${NDK}/build/cmake/android.toolchain.cmake \
+              -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+              -DANDROID_NATIVE_API_LEVEL=${ANDROID_API} \
+              -DANDROID_ABI=${{ matrix.android_abi_cmake }} \
+              -DANDROID_TOOLCHAIN=${CC} \
+              -DANDROID_NDK=${NDK} \
+              -DANDROID_COMPILER_FLAGS="${CFLAGS// /;}" \
+              -DANDROID_LINKER_FLAGS="${LDFLAGS// /;}" \
+              -DANDROID_STL="c++_shared" \
+              -DCMAKE_REQUIRED_FLAGS="${CFLAGS}" \
+              -DCMAKE_REQUIRED_LINK_OPTIONS="${LDFLAGS// /;}" \
+              -DCMAKE_INSTALL_PREFIX=${PREFIX} \
+              -DCMAKE_STAGING_PREFIX=${PREFIX} \
+              -DCMAKE_VERBOSE_MAKEFILE=1 \
+              -DBUILD_SHARED_LIBS=1 \
+              -DLIB_SUFFIX= \
+              -Denable-opensles=1 -Denable-floats=1 -Denable-oboe=1 -Denable-dbus=0 -Denable-oss=0 -Denable-openmp=0 ..
+          make -j$((`nproc`+1))
+          popd
+
+      - name: Install fluidsynth
+        run: |
+          set -ex
+          pushd build
+          make install
+          popd
+
+      - name: Compile fluidsynth-assetloader
+        run: |
+          set -ex
+          
+          pushd doc/android/fluidsynth-assetloader
+          mkdir -p build
+          pushd build
+          
+          cmake -G "Unix Makefiles" \
+              -DCMAKE_MAKE_PROGRAM=make \
+              -DCMAKE_TOOLCHAIN_FILE=${NDK}/build/cmake/android.toolchain.cmake \
+              -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+              -DANDROID_NATIVE_API_LEVEL=${ANDROID_API} \
+              -DANDROID_ABI=${{ matrix.android_abi_cmake }} \
+              -DANDROID_TOOLCHAIN=${CC} \
+              -DANDROID_NDK=${NDK} \
+              -DANDROID_COMPILER_FLAGS="${CFLAGS// /;}" \
+              -DANDROID_LINKER_FLAGS="${LDFLAGS// /;}" \
+              -DANDROID_STL="c++_shared" \
+              -DCMAKE_REQUIRED_FLAGS="${CFLAGS}" \
+              -DCMAKE_REQUIRED_LINK_OPTIONS="${LDFLAGS// /;}" \
+              -DCMAKE_INSTALL_PREFIX=${PREFIX} \
+              -DCMAKE_STAGING_PREFIX=${PREFIX} \
+              -DCMAKE_VERBOSE_MAKEFILE=1 \
+              -DBUILD_SHARED_LIBS=1 \
+              -DLIB_SUFFIX= \
+              ..
+          make -j$((`nproc`+1))
+          cp *.so ${PREFIX}/lib/
+          popd
+          popd
+
+      - name: Show cross-compiled files
+        run: ls -Rg ${PREFIX}
+
+      - name: Collect artifacts
+        run: |
+          set -ex
+          mkdir -p ${{ runner.temp }}/artifacts/lib/${{ matrix.android_abi_cmake }}
+          cd ${{ runner.temp }}/artifacts/lib/${{ matrix.android_abi_cmake }}
+          cp -LR ${PREFIX}/lib/* .
+          ls -Rg .
+          rm -rf *.dll *.alias gettext/ libtextstyle.* *.a *.la
+          rm -f *.so.*
+          mkdir -p ${{ runner.temp }}/artifacts/include
+          cd ${{ runner.temp }}/artifacts/include
+          cp -a ${PREFIX}/include/fluidsynth* .
+
+      - name: Verify all libs exist
+        run: |
+          set -ex
+          ls libFLAC.so
+          ls libfluidsynth-assetloader.so
+          ls libfluidsynth.so
+          ls libgio-2.0.so
+          ls libglib-2.0.so
+          ls libgmodule-2.0.so
+          ls libgobject-2.0.so
+          ls libgthread-2.0.so
+          ls libinstpatch-1.0.so
+          ls liboboe.so
+          ls libogg.so
+          ls libopus.so
+          ls libsndfile.so
+          ls libvorbis.so
+          ls libvorbisenc.so
+          ls libvorbisfile.so
+          ls libpcre.so
+          ls libpcreposix.so
+        working-directory: ${{ github.workspace }}/android-build-root/opt/android/lib
+
+      - name: Assert 16K page alignment
+        run: |
+          set -ex
+          chmod +x contrib/check_elf_alignment.sh
+          contrib/check_elf_alignment.sh "${PREFIX}/lib"
+
+      - name: Publish artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fluidsynth-android${{ env.ANDROID_API }}-${{ matrix.android_abi_cmake }}
+          path: ${{ runner.temp }}/artifacts
+
+      - name: Uninstall fluidsynth
+        run: |
+          set -ex
+          pushd build
+          make uninstall
+          popd
