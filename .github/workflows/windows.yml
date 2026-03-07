@@ -13,8 +13,8 @@ on:
       - '.github/workflows/ios.yml'
       - '.cirrus.yml'
       - 'README.md'
-  release:
-    types: [published]
+    tags:
+      - 'v*'
 
 env:
   BUILD_TYPE: RelWithDebInfo
@@ -188,8 +188,8 @@ jobs:
       shell: bash
       id: artifact_name
       run: |
-        if [[ "${{ github.event_name }}" == "release" ]]; then
-          echo "name=fluidsynth-${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+        if [[ "${{ github.ref_type }}" == "tag" ]]; then
+          echo "name=fluidsynth-${{ github.ref_name }}" >> $GITHUB_OUTPUT
         else
           echo "name=fluidsynth-${{ github.run_id }}" >> $GITHUB_OUTPUT
         fi
@@ -584,7 +584,7 @@ jobs:
 
   # Publish artifacts to GitHub releases (only on release events)
   publish-release:
-    if: github.event_name == 'release' && github.event.action == 'published'
+    if: github.ref_type == 'tag'
     needs:
       - acceptance-test
       - msvc-build
@@ -618,7 +618,7 @@ jobs:
 
   # Create announcement PR in website repository  
   announce-release:
-    if: github.event_name == 'release' && github.event.action == 'published'
+    if: github.ref_type == 'tag'
     needs: [publish-release]
     runs-on: ubuntu-22.04
     name: 📢 Announce Release
@@ -630,8 +630,7 @@ jobs:
       - name: Generate HTML Release Announcement
         run: |
           set -e
-          TAG_NAME="${{ github.event.release.tag_name }}"
-          RELEASE_NAME="${{ github.event.release.name }}"
+          TAG_NAME="${{ github.ref_name }}"
           VERSION="${TAG_NAME#v}"
           DATE="$(date +%Y-%m-%d)"
           FILENAME="${DATE}-released-fluidsynth-${VERSION//./-}.md"
@@ -656,6 +655,6 @@ jobs:
           target-folder: _posts/
           token: ${{ secrets.DEPLOY_API_TOKEN_NEW }}
           clean: false
-          commit-message: Announce FluidSynth ${{ github.event.release.tag_name }}
+          commit-message: Announce FluidSynth ${{ github.ref_name }}
           git-config-name: Fluid Release Announcer
           git-config-email: fluid-release-bot@fluidsynth.github.io
